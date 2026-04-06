@@ -1,5 +1,4 @@
 class ApiConstants {
-  // ✅ Fixed to match your actual MAMP folder name
   static const String baseUrl =
       'http://localhost:8888/instagram_clone_api/backend/';
 

@@ -1,5 +1,5 @@
-import 'package:dio/dio.dart' show FormData, MultipartFile;
-import 'package:get/get.dart' hide FormData, MultipartFile;
+import 'package:dio/dio.dart' as dio;
+import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import '../model/user_model.dart';
@@ -65,18 +65,29 @@ class ProfileController extends GetxController {
     final picker = ImagePicker();
     final file = await picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 80,
+      imageQuality: 85,
     );
     if (file == null) return;
     try {
       isUpdating(true);
       final bytes = await file.readAsBytes();
-      final filename = file.name.isNotEmpty ? file.name : 'avatar.jpg';
+      String filename = file.name.isNotEmpty ? file.name : 'avatar.jpg';
+      // Ensure correct extension
+      if (!filename.contains('.')) filename = 'avatar.jpg';
+      final ext = filename.split('.').last.toLowerCase();
+      final mimeType = ext == 'png' ? 'image/png'
+          : ext == 'gif' ? 'image/gif'
+          : ext == 'webp' ? 'image/webp'
+          : 'image/jpeg';
 
-      final formData = FormData.fromMap({
+      final formData = dio.FormData.fromMap({
         'action': 'update_profile_pic',
         'user_id': myId.toString(),
-        'profile_pic': MultipartFile.fromBytes(bytes, filename: filename),
+        'profile_pic': dio.MultipartFile.fromBytes(
+          bytes,
+          filename: filename,
+          contentType: dio.DioMediaType.parse(mimeType),
+        ),
       });
       final res = await ApiClient.uploadFile(
         endpoint: ApiConstants.profile,

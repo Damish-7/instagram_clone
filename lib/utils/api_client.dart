@@ -1,11 +1,11 @@
-import 'package:dio/dio.dart';
-import 'package:get/get.dart' hide Response, FormData;
+import 'package:dio/dio.dart' as dio;
+import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'api_constants.dart';
 
 class ApiClient {
-  static final Dio _dio = Dio(
-    BaseOptions(
+  static final dio.Dio _dio = dio.Dio(
+    dio.BaseOptions(
       baseUrl: ApiConstants.baseUrl,
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 15),
@@ -13,10 +13,10 @@ class ApiClient {
     ),
   );
 
-  static Dio get instance {
+  static dio.Dio get instance {
     _dio.interceptors.clear();
     _dio.interceptors.add(
-      InterceptorsWrapper(
+      dio.InterceptorsWrapper(
         onRequest: (options, handler) {
           final token = GetStorage().read<String>('token');
           if (token != null) {
@@ -27,7 +27,7 @@ class ApiClient {
         onResponse: (response, handler) {
           return handler.next(response);
         },
-        onError: (DioException error, handler) {
+        onError: (dio.DioException error, handler) {
           if (error.response?.statusCode == 401) {
             GetStorage().erase();
             Get.offAllNamed('/login');
@@ -46,16 +46,14 @@ class ApiClient {
   }
 
   // ─── Multipart (for image/video upload) ─────────────────────────
-  static Future<Response> uploadFile({
+  static Future<dio.Response> uploadFile({
     required String endpoint,
-    required FormData formData,
+    required dio.FormData formData,
   }) async {
     return await instance.post(
       endpoint,
       data: formData,
-      options: Options(contentType: 'multipart/form-data'),
+      options: dio.Options(contentType: 'multipart/form-data'),
     );
   }
 }
-
-

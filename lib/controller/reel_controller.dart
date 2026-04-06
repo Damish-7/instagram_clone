@@ -1,5 +1,5 @@
-import 'package:dio/dio.dart';
-import 'package:get/get.dart' hide FormData, MultipartFile;
+import 'package:dio/dio.dart' as dio;
+import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
@@ -101,12 +101,15 @@ class ReelController extends GetxController {
     if (file == null) return;
     try {
       isUploading(true);
-      final formData = FormData.fromMap({
+      final bytes = await file.readAsBytes();
+      final filename = file.name.isNotEmpty ? file.name : 'reel.mp4';
+
+      final formData = dio.FormData.fromMap({
         'action': 'create_post',
-        'user_id': myId,
+        'user_id': myId.toString(),
         'caption': caption,
-        'media': await MultipartFile.fromFile(file.path, filename: file.name),
         'media_type': 'video',
+        'media': dio.MultipartFile.fromBytes(bytes, filename: filename),
       });
       final res = await ApiClient.uploadFile(
         endpoint: ApiConstants.posts,
@@ -115,9 +118,11 @@ class ReelController extends GetxController {
       if (res.data['status'] == 'success') {
         Helpers.showSuccess('Reel uploaded!');
         fetchReels();
+      } else {
+        Helpers.showError(res.data['message'] ?? 'Upload failed');
       }
     } catch (e) {
-      Helpers.showError('Reel upload failed');
+      Helpers.showError('Reel upload failed: ${e.toString()}');
     } finally {
       isUploading(false);
     }

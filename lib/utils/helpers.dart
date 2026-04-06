@@ -27,9 +27,12 @@ class Helpers {
   }
 
   // ─── Full image URL ─────────────────────────────────────────────
-  static String imageUrl(String path) {
+  static String imageUrl(String? path) {
+    if (path == null || path.isEmpty) return '';
     if (path.startsWith('http')) return path;
-    return '${ApiConstants.uploadUrl}$path';
+    // Remove leading slash if present
+    final cleanPath = path.startsWith('/') ? path.substring(1) : path;
+    return '${ApiConstants.uploadUrl}$cleanPath';
   }
 
   // ─── Snackbar shortcuts ─────────────────────────────────────────
