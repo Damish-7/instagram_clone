@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart' as dio;
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
@@ -9,32 +10,25 @@ import '../utils/helpers.dart';
 
 class StoryController extends GetxController {
   var storyGroups = <UserStoryGroup>[].obs;
-  var isLoading = false.obs;
+  var isLoading   = false.obs;
   var isUploading = false.obs;
-  final _storage = GetStorage();
+  final _storage  = GetStorage();
 
   @override
-  void onInit() {
-    fetchStories();
-    super.onInit();
-  }
+  void onInit() { fetchStories(); super.onInit(); }
 
   int get myId =>
       int.tryParse(_storage.read('user')?['id'].toString() ?? '0') ?? 0;
 
-  // ─── Fetch stories ───────────────────────────────────────────────
   Future<void> fetchStories() async {
     try {
       isLoading(true);
-      final res = await ApiClient.instance.post(
-        ApiConstants.stories,
-        data: {'action': 'get_stories', 'user_id': myId},
-      );
+      final res = await ApiClient.instance.post(ApiConstants.stories,
+          data: {'action': 'get_stories', 'user_id': myId});
       if (res.data['status'] == 'success') {
         final rawStories = (res.data['stories'] as List)
-            .map((s) => StoryModel.fromJson(s))
-            .toList();
-        storyGroups.value = _groupStoriesByUser(rawStories);
+            .map((s) => StoryModel.fromJson(s)).toList();
+        storyGroups.value = _groupByUser(rawStories);
       }
     } catch (e) {
       Helpers.showError('Failed to load stories');
@@ -43,58 +37,41 @@ class StoryController extends GetxController {
     }
   }
 
-  // Group stories by user
-  List<UserStoryGroup> _groupStoriesByUser(List<StoryModel> stories) {
+  List<UserStoryGroup> _groupByUser(List<StoryModel> stories) {
     final Map<int, List<StoryModel>> map = {};
-    for (final s in stories) {
-      map.putIfAbsent(s.userId, () => []).add(s);
-    }
+    for (final s in stories) map.putIfAbsent(s.userId, () => []).add(s);
     return map.entries.map((e) {
-      final userStories = e.value;
-      final allSeen = userStories.every((s) => s.isSeen);
+      final list = e.value;
       return UserStoryGroup(
         userId: e.key,
-        username: userStories.first.username,
-        userProfilePic: userStories.first.userProfilePic,
-        stories: userStories,
-        allSeen: allSeen,
+        username: list.first.username,
+        userProfilePic: list.first.userProfilePic,
+        stories: list,
+        allSeen: list.every((s) => s.isSeen),
       );
     }).toList();
   }
 
-  // ─── Upload story ────────────────────────────────────────────────
   Future<void> uploadStory() async {
     final picker = ImagePicker();
-    final file = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-    );
+    final file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
     if (file == null) return;
     try {
       isUploading(true);
-      final bytes = await file.readAsBytes();
-      String filename = file.name.isNotEmpty ? file.name : 'story.jpg';
-      if (!filename.contains('.')) filename = 'story.jpg';
-      final ext = filename.split('.').last.toLowerCase();
-      final mimeType = ext == 'png' ? 'image/png'
-          : ext == 'gif' ? 'image/gif'
-          : ext == 'webp' ? 'image/webp'
-          : 'image/jpeg';
+      final bytes     = await file.readAsBytes();
+      final base64Str = base64Encode(bytes);
+      final filename  = file.name.isNotEmpty ? file.name : 'story.jpg';
+      final ext       = filename.split('.').last.toLowerCase();
+      final mimeType  = ext == 'png' ? 'image/png' : 'image/jpeg';
 
-      final formData = dio.FormData.fromMap({
-        'action': 'create_story',
-        'user_id': myId.toString(),
-        'media_type': 'image',
-        'media': dio.MultipartFile.fromBytes(
-          bytes,
-          filename: filename,
-          contentType: dio.DioMediaType.parse(mimeType),
-        ),
+      final res = await ApiClient.instance.post(ApiConstants.stories, data: {
+        'action':       'create_story',
+        'user_id':      myId.toString(),
+        'media_type':   'image',
+        'image_base64': base64Str,
+        'mime_type':    mimeType,
+        'filename':     filename,
       });
-      final res = await ApiClient.uploadFile(
-        endpoint: ApiConstants.stories,
-        formData: formData,
-      );
       if (res.data['status'] == 'success') {
         Helpers.showSuccess('Story uploaded!');
         fetchStories();
@@ -108,13 +85,10 @@ class StoryController extends GetxController {
     }
   }
 
-  // ─── Mark story as seen ──────────────────────────────────────────
   Future<void> markSeen(int storyId) async {
     try {
-      await ApiClient.instance.post(
-        ApiConstants.stories,
-        data: {'action': 'mark_seen', 'story_id': storyId, 'user_id': myId},
-      );
+      await ApiClient.instance.post(ApiConstants.stories,
+          data: {'action': 'mark_seen', 'story_id': storyId, 'user_id': myId});
     } catch (_) {}
   }
 }

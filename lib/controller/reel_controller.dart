@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart' as dio;
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
@@ -9,41 +10,48 @@ import '../utils/api_constants.dart';
 import '../utils/helpers.dart';
 
 class ReelController extends GetxController {
-  var reels = <ReelModel>[].obs;
-  var isLoading = false.obs;
-  var isUploading = false.obs;
+  var reels        = <ReelModel>[].obs;
+  var isLoading    = false.obs;
+  var isUploading  = false.obs;
   var currentIndex = 0.obs;
-  VideoPlayerController? videoController;
+  var isVideoReady = false.obs;
+
+  final Map<int, VideoPlayerController> _videoControllers = {};
   final _storage = GetStorage();
 
   @override
-  void onInit() {
-    fetchReels();
-    super.onInit();
-  }
+  void onInit() { fetchReels(); super.onInit(); }
 
   @override
-  void onClose() {
-    videoController?.dispose();
-    super.onClose();
+  void onClose() { _disposeAll(); super.onClose(); }
+
+  void _disposeAll() {
+    for (final c in _videoControllers.values) c.dispose();
+    _videoControllers.clear();
   }
 
   int get myId =>
       int.tryParse(_storage.read('user')?['id'].toString() ?? '0') ?? 0;
 
-  // ─── Fetch reels ─────────────────────────────────────────────────
+  VideoPlayerController? get currentVideo =>
+      _videoControllers[currentIndex.value];
+
   Future<void> fetchReels() async {
     try {
       isLoading(true);
+      _disposeAll();
+      isVideoReady(false);
       final res = await ApiClient.instance.post(
         ApiConstants.posts,
         data: {'action': 'get_reels', 'user_id': myId},
       );
       if (res.data['status'] == 'success') {
         reels.value = (res.data['reels'] as List)
-            .map((r) => ReelModel.fromJson(r))
-            .toList();
-        if (reels.isNotEmpty) _initVideo(reels[0].videoUrl);
+            .map((r) => ReelModel.fromJson(r)).toList();
+        if (reels.isNotEmpty) {
+          currentIndex.value = 0;
+          await _initVideo(0);
+        }
       }
     } catch (e) {
       Helpers.showError('Failed to load reels');
@@ -52,25 +60,36 @@ class ReelController extends GetxController {
     }
   }
 
-  // ─── Init video player ───────────────────────────────────────────
-  Future<void> _initVideo(String url) async {
-    videoController?.dispose();
-    videoController = VideoPlayerController.networkUrl(Uri.parse(
-      Helpers.imageUrl(url),
-    ));
-    await videoController!.initialize();
-    videoController!.setLooping(true);
-    videoController!.play();
-    update();
+  Future<void> _initVideo(int index) async {
+    if (index < 0 || index >= reels.length) return;
+    for (final entry in _videoControllers.entries) {
+      if (entry.key != index) entry.value.pause();
+    }
+    if (_videoControllers.containsKey(index)) {
+      _videoControllers[index]!.play();
+      isVideoReady(true);
+      return;
+    }
+    isVideoReady(false);
+    final url = Helpers.imageUrl(reels[index].videoUrl);
+    final ctrl = VideoPlayerController.networkUrl(Uri.parse(url));
+    _videoControllers[index] = ctrl;
+    try {
+      await ctrl.initialize();
+      ctrl.setLooping(true);
+      ctrl.play();
+      isVideoReady(true);
+      update();
+    } catch (e) {
+      isVideoReady(false);
+    }
   }
 
-  // ─── On reel page changed ────────────────────────────────────────
   void onPageChanged(int index) {
     currentIndex.value = index;
-    _initVideo(reels[index].videoUrl);
+    _initVideo(index);
   }
 
-  // ─── Like reel ───────────────────────────────────────────────────
   Future<void> toggleLike(int reelId) async {
     final index = reels.indexWhere((r) => r.id == reelId);
     if (index == -1) return;
@@ -81,43 +100,37 @@ class ReelController extends GetxController {
       likesCount: wasLiked ? reel.likesCount - 1 : reel.likesCount + 1,
     );
     try {
-      await ApiClient.instance.post(
-        ApiConstants.posts,
-        data: {
-          'action': wasLiked ? 'unlike' : 'like',
-          'post_id': reelId,
-          'user_id': myId,
-        },
-      );
-    } catch (_) {
-      reels[index] = reel;
-    }
+      await ApiClient.instance.post(ApiConstants.posts, data: {
+        'action': wasLiked ? 'unlike' : 'like',
+        'post_id': reelId,
+        'user_id': myId,
+      });
+    } catch (_) { reels[index] = reel; }
   }
 
-  // ─── Upload reel ─────────────────────────────────────────────────
   Future<void> uploadReel(String caption) async {
     final picker = ImagePicker();
     final file = await picker.pickVideo(source: ImageSource.gallery);
     if (file == null) return;
     try {
       isUploading(true);
-      final bytes = await file.readAsBytes();
-      final filename = file.name.isNotEmpty ? file.name : 'reel.mp4';
-
-      final formData = dio.FormData.fromMap({
-        'action': 'create_post',
-        'user_id': myId.toString(),
-        'caption': caption,
-        'media_type': 'video',
-        'media': dio.MultipartFile.fromBytes(bytes, filename: filename),
+      final bytes     = await file.readAsBytes();
+      final base64Str = base64Encode(bytes);
+      final filename  = file.name.isNotEmpty ? file.name : 'reel.mp4';
+      final ext       = filename.split('.').last.toLowerCase();
+      final mimeType  = ext == 'mov' ? 'video/quicktime' : 'video/mp4';
+      final res = await ApiClient.instance.post(ApiConstants.posts, data: {
+        'action':       'create_post',
+        'user_id':      myId.toString(),
+        'caption':      caption,
+        'media_type':   'video',
+        'image_base64': base64Str,
+        'mime_type':    mimeType,
+        'filename':     filename,
       });
-      final res = await ApiClient.uploadFile(
-        endpoint: ApiConstants.posts,
-        formData: formData,
-      );
       if (res.data['status'] == 'success') {
         Helpers.showSuccess('Reel uploaded!');
-        fetchReels();
+        await fetchReels();
       } else {
         Helpers.showError(res.data['message'] ?? 'Upload failed');
       }

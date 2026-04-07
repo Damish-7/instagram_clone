@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:dio/dio.dart' as dio;
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
@@ -10,29 +11,25 @@ import '../utils/helpers.dart';
 
 class ProfileController extends GetxController {
   var profileUser = Rxn<UserModel>();
-  var userPosts = <PostModel>[].obs;
-  var isLoading = false.obs;
-  var isUpdating = false.obs;
-  final _storage = GetStorage();
+  var userPosts   = <PostModel>[].obs;
+  var isLoading   = false.obs;
+  var isUpdating  = false.obs;
+  final _storage  = GetStorage();
 
   int get myId =>
       int.tryParse(_storage.read('user')?['id'].toString() ?? '0') ?? 0;
 
-  // ─── Load profile ────────────────────────────────────────────────
   Future<void> loadProfile(int userId) async {
     try {
       isLoading(true);
-      final res = await ApiClient.instance.post(
-        ApiConstants.profile,
-        data: {'action': 'get_profile', 'user_id': userId, 'viewer_id': myId},
-      );
+      final res = await ApiClient.instance.post(ApiConstants.profile, data: {
+        'action': 'get_profile', 'user_id': userId, 'viewer_id': myId,
+      });
       if (res.data['status'] == 'success') {
         profileUser.value = UserModel.fromJson(
-          Map<String, dynamic>.from(res.data['user']),
-        );
+            Map<String, dynamic>.from(res.data['user']));
         userPosts.value = (res.data['posts'] as List)
-            .map((p) => PostModel.fromJson(p))
-            .toList();
+            .map((p) => PostModel.fromJson(p)).toList();
       }
     } catch (e) {
       Helpers.showError('Failed to load profile');
@@ -41,16 +38,14 @@ class ProfileController extends GetxController {
     }
   }
 
-  // ─── Update bio ──────────────────────────────────────────────────
   Future<void> updateBio(String bio) async {
     try {
       isUpdating(true);
-      final res = await ApiClient.instance.post(
-        ApiConstants.profile,
-        data: {'action': 'update_bio', 'user_id': myId, 'bio': bio},
-      );
+      final res = await ApiClient.instance.post(ApiConstants.profile, data: {
+        'action': 'update_bio', 'user_id': myId, 'bio': bio,
+      });
       if (res.data['status'] == 'success') {
-        profileUser.update((u) => u);
+        loadProfile(myId);
         Helpers.showSuccess('Bio updated!');
       }
     } catch (e) {
@@ -60,39 +55,25 @@ class ProfileController extends GetxController {
     }
   }
 
-  // ─── Update profile picture ──────────────────────────────────────
   Future<void> updateProfilePic() async {
     final picker = ImagePicker();
-    final file = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-    );
+    final file = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
     if (file == null) return;
     try {
       isUpdating(true);
-      final bytes = await file.readAsBytes();
-      String filename = file.name.isNotEmpty ? file.name : 'avatar.jpg';
-      // Ensure correct extension
-      if (!filename.contains('.')) filename = 'avatar.jpg';
-      final ext = filename.split('.').last.toLowerCase();
-      final mimeType = ext == 'png' ? 'image/png'
-          : ext == 'gif' ? 'image/gif'
-          : ext == 'webp' ? 'image/webp'
-          : 'image/jpeg';
+      final bytes     = await file.readAsBytes();
+      final base64Str = base64Encode(bytes);
+      final filename  = file.name.isNotEmpty ? file.name : 'avatar.jpg';
+      final ext       = filename.split('.').last.toLowerCase();
+      final mimeType  = ext == 'png' ? 'image/png' : 'image/jpeg';
 
-      final formData = dio.FormData.fromMap({
-        'action': 'update_profile_pic',
-        'user_id': myId.toString(),
-        'profile_pic': dio.MultipartFile.fromBytes(
-          bytes,
-          filename: filename,
-          contentType: dio.DioMediaType.parse(mimeType),
-        ),
+      final res = await ApiClient.instance.post(ApiConstants.profile, data: {
+        'action':       'update_profile_pic',
+        'user_id':      myId.toString(),
+        'image_base64': base64Str,
+        'mime_type':    mimeType,
+        'filename':     filename,
       });
-      final res = await ApiClient.uploadFile(
-        endpoint: ApiConstants.profile,
-        formData: formData,
-      );
       if (res.data['status'] == 'success') {
         loadProfile(myId);
         Helpers.showSuccess('Profile picture updated!');
@@ -106,20 +87,16 @@ class ProfileController extends GetxController {
     }
   }
 
-  // ─── Follow / Unfollow ───────────────────────────────────────────
   Future<void> toggleFollow(int targetUserId) async {
     final user = profileUser.value;
     if (user == null) return;
     final wasFollowing = user.isFollowing;
     try {
-      await ApiClient.instance.post(
-        ApiConstants.follow,
-        data: {
-          'action': wasFollowing ? 'unfollow' : 'follow',
-          'follower_id': myId,
-          'following_id': targetUserId,
-        },
-      );
+      await ApiClient.instance.post(ApiConstants.follow, data: {
+        'action': wasFollowing ? 'unfollow' : 'follow',
+        'follower_id': myId,
+        'following_id': targetUserId,
+      });
       loadProfile(targetUserId);
     } catch (e) {
       Helpers.showError('Action failed');

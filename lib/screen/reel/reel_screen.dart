@@ -35,13 +35,13 @@ class ReelScreen extends StatelessWidget {
         if (ctrl.reels.isEmpty) {
           return const Center(
               child: Text('No reels yet',
-                  style: TextStyle(color: Colors.white)));
+                  style: TextStyle(color: Colors.white, fontSize: 16)));
         }
         return PageView.builder(
           scrollDirection: Axis.vertical,
           itemCount: ctrl.reels.length,
           onPageChanged: ctrl.onPageChanged,
-          itemBuilder: (_, i) => _ReelItem(reel: ctrl.reels[i], index: i),
+          itemBuilder: (_, i) => _ReelItem(index: i),
         );
       }),
     );
@@ -70,136 +70,145 @@ class ReelScreen extends StatelessWidget {
 }
 
 class _ReelItem extends StatelessWidget {
-  final ReelModel reel;
   final int index;
-  const _ReelItem({required this.reel, required this.index});
+  const _ReelItem({required this.index});
 
   @override
   Widget build(BuildContext context) {
     final ctrl = Get.find<ReelController>();
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // Video player
-        Obx(() {
-          if (ctrl.currentIndex.value == index &&
-              ctrl.videoController != null &&
-              ctrl.videoController!.value.isInitialized) {
-            return GestureDetector(
+    return Obx(() {
+      final reel      = ctrl.reels[index];
+      final isCurrent = ctrl.currentIndex.value == index;
+      // Use currentVideo getter which maps to _videoControllers[currentIndex]
+      final vidCtrl   = isCurrent ? ctrl.currentVideo : null;
+      final ready     = isCurrent && ctrl.isVideoReady.value && vidCtrl != null;
+
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          // ── Video or loading ──────────────────────────────────────
+          if (ready)
+            GestureDetector(
               onTap: () {
-                if (ctrl.videoController!.value.isPlaying) {
-                  ctrl.videoController!.pause();
+                if (vidCtrl.value.isPlaying) {
+                  vidCtrl.pause();
                 } else {
-                  ctrl.videoController!.play();
+                  vidCtrl.play();
                 }
               },
               child: FittedBox(
                 fit: BoxFit.cover,
                 child: SizedBox(
-                  width: ctrl.videoController!.value.size.width,
-                  height: ctrl.videoController!.value.size.height,
-                  child: VideoPlayer(ctrl.videoController!),
+                  width: vidCtrl.value.size.width,
+                  height: vidCtrl.value.size.height,
+                  child: VideoPlayer(vidCtrl),
                 ),
               ),
-            );
-          }
-          return Container(color: Colors.black,
-              child: const Center(child: CircularProgressIndicator(
-                  color: Colors.white)));
-        }),
+            )
+          else
+            const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
 
-        // Gradient overlay
-        Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Colors.transparent, Colors.black54],
+          // ── Gradient overlay ──────────────────────────────────────
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Colors.black54],
+              ),
             ),
           ),
-        ),
 
-        // Right side actions
-        Positioned(
-          right: 12,
-          bottom: 100,
-          child: Column(
-            children: [
-              // Like
-              Obx(() {
-                final current = ctrl.reels.firstWhereOrNull((r) => r.id == reel.id) ?? reel;
-                return Column(
+          // ── Right side actions ────────────────────────────────────
+          Positioned(
+            right: 12,
+            bottom: 100,
+            child: Column(
+              children: [
+                // Like
+                Obx(() {
+                  final current =
+                      ctrl.reels.firstWhereOrNull((r) => r.id == reel.id) ??
+                          reel;
+                  return Column(
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          current.isLiked
+                              ? Icons.favorite
+                              : Icons.favorite_border,
+                          color: current.isLiked ? Colors.red : Colors.white,
+                          size: 30,
+                        ),
+                        onPressed: () => ctrl.toggleLike(reel.id),
+                      ),
+                      Text(Helpers.formatCount(current.likesCount),
+                          style: const TextStyle(color: Colors.white)),
+                    ],
+                  );
+                }),
+                const SizedBox(height: 16),
+
+                // Comments
+                Column(
                   children: [
                     IconButton(
-                      icon: Icon(
-                        current.isLiked ? Icons.favorite : Icons.favorite_border,
-                        color: current.isLiked ? Colors.red : Colors.white,
-                        size: 30,
-                      ),
-                      onPressed: () => ctrl.toggleLike(reel.id),
+                      icon: const Icon(Icons.chat_bubble_outline,
+                          color: Colors.white, size: 30),
+                      onPressed: () {},
                     ),
-                    Text(Helpers.formatCount(current.likesCount),
+                    Text(Helpers.formatCount(reel.commentsCount),
                         style: const TextStyle(color: Colors.white)),
                   ],
-                );
-              }),
-              const SizedBox(height: 16),
+                ),
+                const SizedBox(height: 16),
 
-              // Comment
-              Column(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.chat_bubble_outline,
-                        color: Colors.white, size: 30),
-                    onPressed: () {},
-                  ),
-                  Text(Helpers.formatCount(reel.commentsCount),
-                      style: const TextStyle(color: Colors.white)),
+                // Share
+                const Icon(Icons.send_outlined,
+                    color: Colors.white, size: 30),
+              ],
+            ),
+          ),
+
+          // ── Bottom info ───────────────────────────────────────────
+          Positioned(
+            left: 12,
+            bottom: 80,
+            right: 80,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('@${reel.username}',
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16)),
+                if (reel.caption != null && reel.caption!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(reel.caption!,
+                      style: const TextStyle(color: Colors.white),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
                 ],
-              ),
-              const SizedBox(height: 16),
-
-              // Share
-              const Icon(Icons.send_outlined, color: Colors.white, size: 30),
-            ],
-          ),
-        ),
-
-        // Bottom info
-        Positioned(
-          left: 12,
-          bottom: 80,
-          right: 80,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('@${reel.username}',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16)),
-              if (reel.caption != null) ...[
-                const SizedBox(height: 4),
-                Text(reel.caption!,
-                    style: const TextStyle(color: Colors.white),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis),
+                if (reel.audioName != null) ...[
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    const Icon(Icons.music_note,
+                        color: Colors.white, size: 14),
+                    const SizedBox(width: 4),
+                    Text(reel.audioName!,
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 12)),
+                  ]),
+                ],
               ],
-              if (reel.audioName != null) ...[
-                const SizedBox(height: 8),
-                Row(children: [
-                  const Icon(Icons.music_note, color: Colors.white, size: 14),
-                  const SizedBox(width: 4),
-                  Text(reel.audioName!,
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 12)),
-                ]),
-              ],
-            ],
+            ),
           ),
-        ),
-      ],
-    );
+        ],
+      );
+    });
   }
 }

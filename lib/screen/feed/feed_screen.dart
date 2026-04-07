@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shimmer/shimmer.dart';
 import '../../controller/feed_controller.dart';
 import '../../controller/story_controller.dart';
 import '../../controller/auth_controller.dart';
@@ -8,15 +10,13 @@ import '../../utils/app_theme.dart';
 import '../../utils/helpers.dart';
 import '../story/story_screen.dart';
 import 'post_detail_screen.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:shimmer/shimmer.dart';
 
 class FeedScreen extends StatelessWidget {
   const FeedScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final feedCtrl = Get.find<FeedController>();
+    final feedCtrl  = Get.find<FeedController>();
     final storyCtrl = Get.find<StoryController>();
 
     return Scaffold(
@@ -28,10 +28,7 @@ class FeedScreen extends StatelessWidget {
             icon: const Icon(Icons.add_box_outlined),
             onPressed: () => _showUploadDialog(context, feedCtrl),
           ),
-          IconButton(
-            icon: const Icon(Icons.favorite_border),
-            onPressed: () {},
-          ),
+          IconButton(icon: const Icon(Icons.favorite_border), onPressed: () {}),
         ],
       ),
       body: Obx(() {
@@ -43,14 +40,13 @@ class FeedScreen extends StatelessWidget {
           },
           child: CustomScrollView(
             slivers: [
-              // Stories row
               SliverToBoxAdapter(child: _buildStoriesRow(storyCtrl)),
               const SliverToBoxAdapter(child: Divider(height: 1)),
-
-              // Posts
               feedCtrl.posts.isEmpty
                   ? const SliverFillRemaining(
-                      child: Center(child: Text('No posts yet')))
+                      child: Center(child: Text('No posts yet.\nFollow someone or upload a post!',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey))))
                   : SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (_, i) => _PostCard(post: feedCtrl.posts[i]),
@@ -64,7 +60,6 @@ class FeedScreen extends StatelessWidget {
     );
   }
 
-  // ─── Stories row ─────────────────────────────────────────────────
   Widget _buildStoriesRow(StoryController ctrl) {
     return SizedBox(
       height: 100,
@@ -75,6 +70,7 @@ class FeedScreen extends StatelessWidget {
             itemBuilder: (_, i) {
               if (i == 0) return _addStoryButton(ctrl);
               final group = ctrl.storyGroups[i - 1];
+              final picUrl = Helpers.imageUrl(group.userProfilePic);
               return GestureDetector(
                 onTap: () => Get.to(() => StoryScreen(group: group)),
                 child: Padding(
@@ -84,9 +80,7 @@ class FeedScreen extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(2),
                         decoration: BoxDecoration(
-                          gradient: group.allSeen
-                              ? null
-                              : AppTheme.storyGradient,
+                          gradient: group.allSeen ? null : AppTheme.storyGradient,
                           color: group.allSeen ? Colors.grey[300] : null,
                           shape: BoxShape.circle,
                         ),
@@ -96,11 +90,11 @@ class FeedScreen extends StatelessWidget {
                               color: Colors.white, shape: BoxShape.circle),
                           child: CircleAvatar(
                             radius: 28,
-                            backgroundImage: group.userProfilePic != null
-                                ? CachedNetworkImageProvider(
-                                    Helpers.imageUrl(group.userProfilePic!))
+                            backgroundColor: Colors.grey[200],
+                            backgroundImage: picUrl.isNotEmpty
+                                ? CachedNetworkImageProvider(picUrl)
                                 : null,
-                            child: group.userProfilePic == null
+                            child: picUrl.isEmpty
                                 ? const Icon(Icons.person)
                                 : null,
                           ),
@@ -126,22 +120,18 @@ class FeedScreen extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Column(
               children: [
-                Stack(
-                  children: [
-                    const CircleAvatar(
-                        radius: 30, child: Icon(Icons.person, size: 30)),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        decoration: const BoxDecoration(
-                            color: AppTheme.primary, shape: BoxShape.circle),
-                        child: const Icon(Icons.add,
-                            color: Colors.white, size: 18),
-                      ),
+                Stack(children: [
+                  const CircleAvatar(
+                      radius: 30, child: Icon(Icons.person, size: 30)),
+                  Positioned(
+                    bottom: 0, right: 0,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                          color: AppTheme.primary, shape: BoxShape.circle),
+                      child: const Icon(Icons.add, color: Colors.white, size: 18),
                     ),
-                  ],
-                ),
+                  ),
+                ]),
                 const SizedBox(height: 4),
                 const Text('Your story', style: TextStyle(fontSize: 11)),
               ],
@@ -150,7 +140,6 @@ class FeedScreen extends StatelessWidget {
         ));
   }
 
-  // ─── Upload dialog ────────────────────────────────────────────────
   void _showUploadDialog(BuildContext context, FeedController ctrl) {
     final captionCtrl = TextEditingController();
     Get.dialog(AlertDialog(
@@ -163,17 +152,13 @@ class FeedScreen extends StatelessWidget {
       actions: [
         TextButton(onPressed: Get.back, child: const Text('Cancel')),
         ElevatedButton(
-          onPressed: () {
-            Get.back();
-            ctrl.uploadPost(captionCtrl.text);
-          },
+          onPressed: () { Get.back(); ctrl.uploadPost(captionCtrl.text); },
           child: const Text('Upload'),
         ),
       ],
     ));
   }
 
-  // ─── Shimmer loading ─────────────────────────────────────────────
   Widget _buildShimmer() {
     return Shimmer.fromColors(
       baseColor: Colors.grey[300]!,
@@ -196,7 +181,7 @@ class FeedScreen extends StatelessWidget {
   }
 }
 
-// ─── Post Card Widget ─────────────────────────────────────────────────────
+// ── Post Card ─────────────────────────────────────────────────────────────────
 class _PostCard extends StatelessWidget {
   final PostModel post;
   const _PostCard({required this.post});
@@ -205,6 +190,8 @@ class _PostCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final feedCtrl = Get.find<FeedController>();
     final authCtrl = Get.find<AuthController>();
+    final picUrl   = Helpers.imageUrl(post.userProfilePic);
+    final imgUrl   = Helpers.imageUrl(post.mediaUrl);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,17 +199,16 @@ class _PostCard extends StatelessWidget {
         // Header
         ListTile(
           leading: CircleAvatar(
-            backgroundImage: post.userProfilePic != null
-                ? CachedNetworkImageProvider(
-                    Helpers.imageUrl(post.userProfilePic!))
+            backgroundColor: Colors.grey[200],
+            backgroundImage: picUrl.isNotEmpty
+                ? CachedNetworkImageProvider(picUrl)
                 : null,
-            child: post.userProfilePic == null
-                ? const Icon(Icons.person)
-                : null,
+            child: picUrl.isEmpty ? const Icon(Icons.person) : null,
           ),
           title: Text(post.username,
               style: const TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text(Helpers.timeAgo(post.createdAt)),
+          subtitle: Text(Helpers.timeAgo(post.createdAt),
+              style: const TextStyle(fontSize: 12)),
           trailing: post.userId == authCtrl.myId
               ? IconButton(
                   icon: const Icon(Icons.more_vert),
@@ -241,50 +227,56 @@ class _PostCard extends StatelessWidget {
               : null,
         ),
 
-        // Image
+        // Post Image
         GestureDetector(
           onDoubleTap: () => feedCtrl.toggleLike(post.id),
-          child: CachedNetworkImage(
-            imageUrl: Helpers.imageUrl(post.mediaUrl),
-            width: double.infinity,
-            height: 300,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => Container(
-                height: 300, color: Colors.grey[200],
-                child: const Center(child: CircularProgressIndicator())),
-            errorWidget: (_, __, ___) =>
-                Container(height: 300, color: Colors.grey[200],
-                    child: const Icon(Icons.broken_image)),
-          ),
+          child: imgUrl.isEmpty
+              ? Container(height: 300, color: Colors.grey[200],
+                  child: const Center(child: Icon(Icons.image,
+                      size: 64, color: Colors.grey)))
+              : CachedNetworkImage(
+                  imageUrl: imgUrl,
+                  width: double.infinity,
+                  height: 300,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(
+                      height: 300, color: Colors.grey[200],
+                      child: const Center(
+                          child: CircularProgressIndicator())),
+                  errorWidget: (_, __, ___) => Container(
+                      height: 300, color: Colors.grey[200],
+                      child: const Center(child: Icon(Icons.broken_image,
+                          size: 48, color: Colors.grey))),
+                ),
         ),
 
-        // Actions
+        // Actions row
         Obx(() {
-          final current = feedCtrl.posts.firstWhereOrNull((p) => p.id == post.id) ?? post;
-          return Row(
-            children: [
-              IconButton(
-                icon: Icon(
-                  current.isLiked ? Icons.favorite : Icons.favorite_border,
-                  color: current.isLiked ? Colors.red : null,
-                ),
-                onPressed: () => feedCtrl.toggleLike(post.id),
+          final cur = feedCtrl.posts.firstWhereOrNull(
+                  (p) => p.id == post.id) ?? post;
+          return Row(children: [
+            IconButton(
+              icon: Icon(
+                cur.isLiked ? Icons.favorite : Icons.favorite_border,
+                color: cur.isLiked ? Colors.red : null,
               ),
-              IconButton(
-                icon: const Icon(Icons.chat_bubble_outline),
-                onPressed: () => Get.to(() => PostDetailScreen(post: current)),
-              ),
-              const Spacer(),
-            ],
-          );
+              onPressed: () => feedCtrl.toggleLike(post.id),
+            ),
+            IconButton(
+              icon: const Icon(Icons.chat_bubble_outline),
+              onPressed: () => Get.to(() => PostDetailScreen(post: cur)),
+            ),
+            const Spacer(),
+          ]);
         }),
 
-        // Likes count
+        // Likes
         Obx(() {
-          final current = feedCtrl.posts.firstWhereOrNull((p) => p.id == post.id) ?? post;
+          final cur = feedCtrl.posts.firstWhereOrNull(
+                  (p) => p.id == post.id) ?? post;
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text('${Helpers.formatCount(current.likesCount)} likes',
+            child: Text('${Helpers.formatCount(cur.likesCount)} likes',
                 style: const TextStyle(fontWeight: FontWeight.bold)),
           );
         }),
@@ -297,8 +289,7 @@ class _PostCard extends StatelessWidget {
               text: TextSpan(
                 style: DefaultTextStyle.of(context).style,
                 children: [
-                  TextSpan(
-                      text: post.username,
+                  TextSpan(text: post.username,
                       style: const TextStyle(fontWeight: FontWeight.bold)),
                   TextSpan(text: '  ${post.caption}'),
                 ],
