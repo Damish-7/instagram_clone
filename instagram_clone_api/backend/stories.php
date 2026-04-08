@@ -1,10 +1,9 @@
 <?php
 require 'config/db.php';
 
-$data = isset($_POST['action']) ? $_POST : json_decode(file_get_contents("php://input"), true);
+$data   = json_decode(file_get_contents("php://input"), true) ?? [];
 $action = $data['action'] ?? '';
 
-// ─── Get stories ──────────────────────────────────────────────────
 if ($action === 'get_stories') {
     $userId = $data['user_id'] ?? 0;
     $stmt = $pdo->prepare("
@@ -17,47 +16,43 @@ if ($action === 'get_stories') {
           AND (s.user_id = ? OR s.user_id IN (
             SELECT following_id FROM follows WHERE follower_id = ?
           ))
-        GROUP BY s.id
-        ORDER BY s.user_id = ? DESC, s.created_at DESC
+        GROUP BY s.id ORDER BY s.user_id = ? DESC, s.created_at DESC
     ");
     $stmt->execute([$userId, $userId, $userId, $userId, $userId]);
     echo json_encode(['status' => 'success', 'stories' => $stmt->fetchAll()]);
 }
 
-// ─── Create story ─────────────────────────────────────────────────
 elseif ($action === 'create_story') {
-    $userId    = $_POST['user_id'] ?? 0;
-    $mediaType = $_POST['media_type'] ?? 'image';
+    $userId   = $data['user_id'] ?? 0;
+    $base64   = $data['image_base64'] ?? '';
+    $mimeType = $data['mime_type'] ?? 'image/jpeg';
+    $filename = $data['filename'] ?? '';
 
-    if (!isset($_FILES['media'])) {
-        echo json_encode(['status' => 'error', 'message' => 'No file']);
+    if (empty($base64)) {
+        echo json_encode(['status' => 'error', 'message' => 'No image data']);
         exit();
     }
 
-    $mediaUrl = uploadFile($_FILES['media'], 'stories');
+    $mediaUrl = saveBase64File($base64, $mimeType, 'stories', $filename);
     if (!$mediaUrl) {
-        echo json_encode(['status' => 'error', 'message' => 'Upload failed']);
+        echo json_encode(['status' => 'error', 'message' => 'Failed to save file']);
         exit();
     }
 
     $stmt = $pdo->prepare("
         INSERT INTO stories (user_id, media_url, media_type, expires_at)
-        VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 24 HOUR))
+        VALUES (?, ?, 'image', DATE_ADD(NOW(), INTERVAL 24 HOUR))
     ");
-    $stmt->execute([$userId, $mediaUrl, $mediaType]);
+    $stmt->execute([$userId, $mediaUrl]);
     echo json_encode(['status' => 'success']);
 }
 
-// ─── Mark seen ────────────────────────────────────────────────────
 elseif ($action === 'mark_seen') {
-    $storyId = $data['story_id'] ?? 0;
-    $userId  = $data['user_id'] ?? 0;
     $stmt = $pdo->prepare("INSERT IGNORE INTO story_views (story_id, user_id) VALUES (?, ?)");
-    $stmt->execute([$storyId, $userId]);
+    $stmt->execute([$data['story_id'] ?? 0, $data['user_id'] ?? 0]);
     echo json_encode(['status' => 'success']);
 }
 
 else {
     echo json_encode(['status' => 'error', 'message' => 'Invalid action']);
 }
-?>
